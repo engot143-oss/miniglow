@@ -1,0 +1,242 @@
+# Actual output of scripts/demo.sh, run 2026-10-02 on Linux (Python 3.13.15). NOT run on Windows.
+# Generated times and temp paths will differ on your machine.
+
+=================== 1. Set up ===================
+
+$ mg init
+Created /tmp/claude-0/mini_glow_demo
+[exit code 0]
+
+=================== 2. Eric allows what Mini Glow may touch (default is deny) ===================
+
+$ mg policy propose read_file C:/Users/Eric/practice_files --source Eric, demo
+Permission candidate #6 recorded. Eric must approve it.
+[exit code 0]
+
+$ mg proposal approve 6 --by eric
+Candidate #6 approved by eric.
+[exit code 0]
+
+$ mg policy propose write_file C:/Users/Eric/practice_files/out --source Eric, demo
+Permission candidate #7 recorded. Eric must approve it.
+[exit code 0]
+
+$ mg proposal approve 7 --by eric
+Candidate #7 approved by eric.
+[exit code 0]
+
+=================== 3. Glow's task arrives (you relay it). Actions are checked against Eric's list ===================
+
+$ mg add examples/task_from_glow.md
+Received MG-T-0001: Draft rename checklist  ->  queued
+[exit code 0]
+
+$ mg start
+Started MG-T-0001: Draft rename checklist
+
+YOUR JOB:
+Write the checklist as a text file and report back with the file as evidence.
+[exit code 0]
+
+=================== 4. Authorize individual actions (nothing is executed; this is the gate) ===================
+
+$ mg authorize MG-T-0001 read_file C:/Users/Eric/practice_files/a.txt
+ALLOW: target is on Eric's allowed list
+[exit code 0]
+
+$ mg authorize MG-T-0001 read_file C:/Users/Eric/Documents
+DENY: target 'C:/Users/Eric/Documents' is not on Eric's allowed list for 'read_file'
+[exit code 4]
+
+$ mg authorize MG-T-0001 send_message team
+DENY: 'send_message' is not available in this pilot. Approval cannot enable it
+[exit code 4]
+
+$ mg authorize MG-T-0001 organize_files C:/x
+PAUSE: unknown action category 'organize_files'. Ask Glow or Eric to clarify
+[exit code 5]
+
+=================== 5. Progress, stuck, ask Glow, resume ===================
+
+$ mg note MG-T-0001 Opened the practice folder and listed its files
+Recorded.
+[exit code 0]
+
+$ mg block MG-T-0001 Which file-name style should I use? --tried Checked the folder for examples
+MINI GLOW -> GLOW  |  HELP REQUEST (blocked)
+(Manual relay: Eric copies this between Glow and Mini Glow. No automatic connection exists.)
+
+TASK: MG-T-0001  Draft rename checklist
+GLOW REF: GLOW-0007
+GENERATED: 2026-10-02 09:48 PDT
+
+WHERE I AM STUCK:
+Which file-name style should I use?
+
+WHAT I ALREADY TRIED:
+Checked the folder for examples
+
+RECENT PROGRESS:
+  - Opened the practice folder and listed its files
+  - Tried before blocking: Checked the folder for examples
+
+WHAT I NEED FROM GLOW: a decision or instruction that unblocks the task.
+NEXT STOP: Glow  (Eric reviews and relays; Eric remains final authority)
+--- saved to /tmp/claude-0/mini_glow_demo/handoffs/outbox/MG-T-0001-help-request.md
+--- Copy the packet above to Glow.
+[exit code 0]
+
+$ mg resume MG-T-0001 Use YYYY-MM-DD_name.ext
+Resumed MG-T-0001 with guidance recorded.
+[exit code 0]
+
+=================== 6. Evidence, submit, return packet for Glow ===================
+
+$ mg evidence MG-T-0001 --text checklist.txt created with 6 numbered steps
+Recorded: checklist.txt created with 6 numbered steps
+[exit code 0]
+
+$ mg submit MG-T-0001 Checklist drafted and saved
+MINI GLOW -> GLOW  |  RETURN PACKET
+(Manual relay: Eric copies this between Glow and Mini Glow. No automatic connection exists.)
+
+TASK: MG-T-0001  Draft rename checklist
+GLOW REF: GLOW-0007
+STATUS: awaiting_review
+GENERATED: 2026-10-02 09:48 PDT
+
+SUMMARY:
+Checklist drafted and saved
+
+DECLARED ACTIONS:
+  - read_file: C:/Users/Eric/practice_files
+  - write_file: C:/Users/Eric/practice_files/out
+
+PROGRESS LOG:
+  - [2026-10-02T09:48] Opened the practice folder and listed its files
+  - [2026-10-02T09:48] Tried before blocking: Checked the folder for examples
+
+EVIDENCE:
+  - [2026-10-02T09:48] checklist.txt created with 6 numbered steps
+
+ASSUMPTIONS / LIMITS:
+  (none recorded)
+
+DONE WHEN (from Glow):
+The checklist file exists and Glow has reviewed it.
+
+NEXT STOP: Glow  (Eric remains final authority)
+--- saved to /tmp/claude-0/mini_glow_demo/handoffs/outbox/MG-T-0001-return.md
+--- Copy the packet above to Glow for review.
+[exit code 0]
+
+$ mg accept MG-T-0001 --by glow --comment Looks good
+MG-T-0001 accepted by glow.
+[exit code 0]
+
+=================== 7. Buy/send wording: flagged, paused, and Eric's approval cannot activate it ===================
+
+$ mg add examples/task_needs_approval.md
+Received MG-T-0002: Weekly update email  ->  needs_clarification
+  Paused. Needs clarification before it can queue: draft_text:local-draft -> deny (target 'local-draft' is not on Eric's allowed list for 'draft_text'); send_message:team list -> deny ('send_message' is not available in this pilot. Approval cannot enable it)
+  Glow or Eric can fix it with: clarify MG-T-0002 --by glow --actions "read_file: <path>"
+  Flagged (wording about buying/sending). Eric must record: decide MG-T-0002 --by eric --decision approve|decline
+[exit code 0]
+
+$ mg decide MG-T-0002 --by eric --decision approve
+Eric's decision recorded: approve. (This enables no action. Buy/send stay unavailable.)
+[exit code 0]
+
+$ mg start MG-T-0002
+ERROR: MG-T-0002 is 'needs_clarification'; only queued tasks can start.
+[exit code 2]
+
+$ mg policy propose send_message team --source demo
+ERROR: 'send_message' is not available in this pilot, so no permission can be proposed for it.
+[exit code 2]
+
+=================== 8. Unknown action pauses for clarification ===================
+
+$ mg add examples/task_unknown_action.md
+Received MG-T-0003: Tidy downloads  ->  needs_clarification
+  Paused. Needs clarification before it can queue: organize_files:C:/Users/Eric/Downloads -> pause (unknown action category 'organize_files'. Ask Glow or Eric to clarify)
+  Glow or Eric can fix it with: clarify MG-T-0003 --by glow --actions "read_file: <path>"
+[exit code 0]
+
+$ mg clarify MG-T-0003 --by glow --actions read_file: C:/Users/Eric/practice_files
+MG-T-0003 is now queued
+[exit code 0]
+
+=================== 9. Reviewed memory: worker candidate -> Eric scope -> Glow approves ===================
+
+$ mg memory propose project_context Practice folder holds 12 files --source MG-T-0001 evidence --scope mini-glow
+Candidate #8 recorded. It is not memory until reviewed.
+[exit code 0]
+
+$ mg proposals
+#8 memory/project_context scope=mini-glow by mini-glow: Practice folder holds 12 files  [source: MG-T-0001 evidence]
+[exit code 0]
+
+$ mg proposal approve 8 --by glow
+ERROR: Scope 'mini-glow' has not been approved by Eric. Glow can approve only inside an approved scope.
+[exit code 2]
+
+$ mg scope allow mini-glow --by eric
+Scope 'mini-glow' approved by Eric.
+[exit code 0]
+
+$ mg proposal approve 8 --by glow
+Candidate #8 approved by glow.
+[exit code 0]
+
+$ mg memory show project_context
+<!-- Generated from the database. Do not edit by hand; use proposals. -->
+
+# Project Context
+
+- #8 [2026-10-02, approved by glow, scope mini-glow, source: MG-T-0001 evidence] Practice folder holds 12 files
+
+[exit code 0]
+
+=================== 10. Restart check, health, backup, audit export ===================
+
+$ mg recover
+Unfinished work (state unchanged):
+  (none)
+Waiting for clarification:
+  MG-T-0002  p2  needs_clarification Weekly update email
+Queued:
+  MG-T-0003  p5  queued              Tidy downloads
+Pending proposals: 0
+[exit code 0]
+
+$ mg verify
+OK: integrity, audit protection, evidence hashes and memory exports are consistent.
+[exit code 0]
+
+$ mg backup --zip
+Archive written: /tmp/claude-0/mini_glow_demo/backups/mini-glow-data-20261002-094852-007366.zip
+[exit code 0]
+
+$ mg export-log
+Wrote /tmp/claude-0/mini_glow_demo/exports/events.jsonl
+[exit code 0]
+
+Audit trail for MG-T-0001:
+
+$ mg log --task MG-T-0001
+2026-10-02T09:48:50  MG-T-0001 eric       created        Task received: Draft rename checklist (status queued)
+2026-10-02T09:48:50  MG-T-0001 mini-glow  status         queued -> in_progress. Started
+2026-10-02T09:48:50  MG-T-0001 mini-glow  authorize      ALLOW: read_file:C:/Users/Eric/practice_files/a.txt - target is on Eric's allowed list
+2026-10-02T09:48:50  MG-T-0001 mini-glow  authorize      DENY: read_file:C:/Users/Eric/Documents - target 'C:/Users/Eric/Documents' is not on Eric's allowed list for 'read_file'
+2026-10-02T09:48:50  MG-T-0001 mini-glow  authorize      DENY: send_message:team - 'send_message' is not available in this pilot. Approval cannot enable it
+2026-10-02T09:48:50  MG-T-0001 mini-glow  authorize      PAUSE: organize_files:C:/x - unknown action category 'organize_files'. Ask Glow or Eric to clarify
+2026-10-02T09:48:51  MG-T-0001 mini-glow  note           Opened the practice folder and listed its files
+2026-10-02T09:48:51  MG-T-0001 mini-glow  status         in_progress -> blocked. Asked Glow: Which file-name style should I use?
+2026-10-02T09:48:51  MG-T-0001 mini-glow  note           Tried before blocking: Checked the folder for examples
+2026-10-02T09:48:51  MG-T-0001 mini-glow  status         blocked -> in_progress. Resumed
+2026-10-02T09:48:51  MG-T-0001 mini-glow  guidance       Guidance from Glow/Eric: Use YYYY-MM-DD_name.ext
+2026-10-02T09:48:51  MG-T-0001 mini-glow  evidence       checklist.txt created with 6 numbered steps
+2026-10-02T09:48:51  MG-T-0001 mini-glow  status         in_progress -> awaiting_review. Submitted for Glow's review
+2026-10-02T09:48:51  MG-T-0001 glow       status         awaiting_review -> done. Accepted. Looks good
+[exit code 0]
