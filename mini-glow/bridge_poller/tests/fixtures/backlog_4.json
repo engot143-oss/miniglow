@@ -1,0 +1,18 @@
+{
+  "files": [
+    {"id": "id-R2G-001", "name": "R2G-001_RAY_to_GLOW_fixture.txt", "createdTime": "2026-10-04T23:45:18Z",
+     "text": "PACKET_ID: R2G-001\nFROM: RAY\nTO: GLOW\nREPLY_TO: G2R-001\nSTATUS: RESPONSE\n\nMESSAGE:\nfixture\nEND_OF_PACKET\n"},
+    {"id": "id-R2G-002", "name": "R2G-002_RAY_to_GLOW_fixture.txt", "createdTime": "2026-10-04T23:51:26Z",
+     "text": "PACKET_ID: R2G-002\nFROM: RAY\nTO: GLOW\nREPLY_TO: G2R-002\nSTATUS: REQUEST\n\nMESSAGE:\nfixture\nEND_OF_PACKET\n"},
+    {"id": "id-R2G-003", "name": "R2G-003_RAY_to_GLOW_fixture.txt", "createdTime": "2026-10-04T23:55:18Z",
+     "text": "PACKET_ID: R2G-003\nFROM: RAY\nTO: GLOW\nREPLY_TO: G2R-003\nSTATUS: RESPONSE\n\nMESSAGE:\nfixture\nEND_OF_PACKET\n"},
+    {"id": "id-R2G-004", "name": "R2G-004_RAY_to_GLOW_fixture.txt", "createdTime": "2026-10-05T00:03:19Z",
+     "text": "PACKET_ID: R2G-004\nFROM: RAY\nTO: GLOW\nREPLY_TO: G2R-004\nSTATUS: REQUEST\n\nMESSAGE:\nfixture\nEND_OF_PACKET\n"}
+  ],
+  "schedule": {
+    "3": [
+      {"id": "id-R2G-005", "name": "R2G-005_RAY_to_GLOW_fixture.txt", "createdTime": "2026-10-05T00:08:41Z",
+       "text": "PACKET_ID: R2G-005\nFROM: RAY\nTO: GLOW\nREPLY_TO: G2R-005\nSTATUS: REQUEST\n\nMESSAGE:\nfixture\nEND_OF_PACKET\n"}
+    ]
+  }
+}
