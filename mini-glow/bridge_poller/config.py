@@ -12,6 +12,7 @@ ENV_ROOT_ID = "BRIDGE_POLLER_ROOT_ID"
 ENV_FOLDER_PATH = "BRIDGE_POLLER_FOLDER_PATH"  # local Ray-to-Glow folder (no default)
 ENV_ROOT_PATH = "BRIDGE_POLLER_ROOT_PATH"  # local Bridge root folder (no default)
 ENV_DB = "BRIDGE_POLLER_DB"
+ENV_KEY_FILE = "BRIDGE_POLLER_KEY_FILE"  # service-account key for --live-api (no default; never in the repo)
 
 
 def _pick(cli_value, env_name, default, environ):
@@ -37,6 +38,12 @@ def resolve_paths(cli_folder=None, cli_root=None, environ=None):
         _pick(cli_folder, ENV_FOLDER_PATH, None, environ),
         _pick(cli_root, ENV_ROOT_PATH, None, environ),
     )
+
+
+def resolve_key_file(cli_value=None, environ=None):
+    """Path of the service-account key file, or None when not configured. No default."""
+    environ = os.environ if environ is None else environ
+    return _pick(cli_value, ENV_KEY_FILE, None, environ)
 
 
 def default_db(environ=None, platform=None):

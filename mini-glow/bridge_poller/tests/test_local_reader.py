@@ -17,6 +17,13 @@ def packet(pid, end=True):
     return text + ("END_OF_PACKET\n" if end else "")
 
 
+def setUpModule():
+    # Command-line runs now need --interval 60 or more; tests never really wait.
+    patcher = mock.patch("time.sleep", lambda _seconds: None)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 class Bridge:
     """A practice Bridge: <tmp>/Glow-Ray-Bridge/Ray-to-Glow, plus a separate state folder."""
 
@@ -244,7 +251,7 @@ class LocalReaderTests(unittest.TestCase):
         db = os.path.join(b.state, "p.sqlite")
         with contextlib.redirect_stdout(io.StringIO()):
             code = poller.main(["--live", "--folder-path", b.folder, "--root-path", b.root,
-                                "--db", db, "--max-checks", "3", "--interval", "0"])
+                                "--db", db, "--max-checks", "3", "--interval", "60"])
         self.assertEqual(code, 0)
         self.assertEqual(b.snapshot(), before)
 
@@ -283,7 +290,7 @@ class LiveCliTests(unittest.TestCase):
         b.add("R2G-001_x.txt", packet("R2G-001"))
         db = os.path.join(b.state, "x.sqlite")
         code, out = self.main(["--live", "--folder-path", b.folder, "--root-path", b.root,
-                               "--db", db, "--max-checks", "2", "--interval", "0"])
+                               "--db", db, "--max-checks", "2", "--interval", "60"])
         self.assertEqual(code, 0)
         self.assertIn("end_reason=WINDOW_DONE checks_done=2 new_count=0 suspect_listings=0 health=OK", out)
 
@@ -292,7 +299,7 @@ class LiveCliTests(unittest.TestCase):
         b.add("R2G-001_x.txt", packet("R2G-001"))
         env = {config.ENV_FOLDER_PATH: b.folder, config.ENV_ROOT_PATH: b.root,
                config.ENV_DB: os.path.join(b.state, "env.sqlite")}
-        code, _ = self.main(["--live", "--max-checks", "1", "--interval", "0"], env)
+        code, _ = self.main(["--live", "--max-checks", "1", "--interval", "60"], env)
         self.assertEqual(code, 0)
         self.assertTrue(os.path.exists(os.path.join(b.state, "env.sqlite")))
 
@@ -302,7 +309,7 @@ class LiveCliTests(unittest.TestCase):
         for db in (os.path.join(b.folder, "p.sqlite"), os.path.join(b.root, "p.sqlite"),
                    os.path.join(b.root, "deeper", "p.sqlite")):
             code, out = self.main(["--live", "--folder-path", b.folder, "--root-path", b.root,
-                                   "--db", db, "--max-checks", "1", "--interval", "0"])
+                                   "--db", db, "--max-checks", "1", "--interval", "60"])
             self.assertEqual(code, 3)
             self.assertIn("must not be inside a watched folder", out)
             self.assertFalse(os.path.exists(db))
@@ -329,7 +336,7 @@ class LiveCliTests(unittest.TestCase):
 
         with mock.patch.object(poller, "run", run_then_vanish):
             code, out = self.main(["--live", "--folder-path", b.folder, "--root-path", b.root,
-                                   "--db", db, "--max-checks", "2", "--interval", "0"])
+                                   "--db", db, "--max-checks", "2", "--interval", "60"])
         self.assertEqual(code, 3)
         self.assertIn("ERROR", out)
         check = Store(db)

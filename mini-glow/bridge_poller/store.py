@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS runs (
     suspect_listings INTEGER NOT NULL DEFAULT 0,
     health       TEXT NOT NULL DEFAULT 'OK'
 );
+CREATE TABLE IF NOT EXISTS incomplete (
+    drive_file_id TEXT PRIMARY KEY,
+    packet_id     TEXT NOT NULL,
+    streak        INTEGER NOT NULL
+);
 """
 
 # Columns added after the first draft; older databases get them on open.
@@ -94,6 +99,34 @@ class Store:
                     )
         self.conn.commit()
         return flagged
+
+    def bump_incomplete(self, drive_file_id, packet_id):
+        """One more consecutive sighting of a packet-named file that is not complete yet. Returns the streak."""
+        self.conn.execute(
+            "INSERT INTO incomplete (drive_file_id, packet_id, streak) VALUES (?, ?, 1) "
+            "ON CONFLICT(drive_file_id) DO UPDATE SET "
+            "streak = CASE WHEN packet_id = excluded.packet_id THEN streak + 1 ELSE 1 END, "
+            "packet_id = excluded.packet_id",  # a renamed file starts a fresh streak
+            (drive_file_id, packet_id),
+        )
+        self.conn.commit()
+        row = self.conn.execute("SELECT streak FROM incomplete WHERE drive_file_id = ?", (drive_file_id,)).fetchone()
+        return row["streak"]
+
+    def is_incomplete(self, drive_file_id):
+        row = self.conn.execute("SELECT 1 FROM incomplete WHERE drive_file_id = ?", (drive_file_id,)).fetchone()
+        return row is not None
+
+    def keep_incomplete(self, drive_file_ids):
+        """End every streak except those of the given files (seen incomplete again in this listing)."""
+        for r in self.conn.execute("SELECT drive_file_id FROM incomplete").fetchall():
+            if r["drive_file_id"] not in drive_file_ids:
+                self.conn.execute("DELETE FROM incomplete WHERE drive_file_id = ?", (r["drive_file_id"],))
+        self.conn.commit()
+
+    def incomplete_streaks(self):
+        rows = self.conn.execute("SELECT drive_file_id, streak FROM incomplete ORDER BY drive_file_id").fetchall()
+        return {r["drive_file_id"]: r["streak"] for r in rows}
 
     def packet_count(self):
         return self.conn.execute("SELECT COUNT(*) FROM packets").fetchone()[0]

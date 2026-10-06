@@ -40,6 +40,13 @@ def run_poller(fake, store, max_checks=5):
     return summary, sleeps
 
 
+def setUpModule():
+    # Command-line runs now need --interval 60 or more; tests never really wait.
+    patcher = mock.patch("time.sleep", lambda _seconds: None)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 class PollerTests(unittest.TestCase):
     def new_store(self):
         store = Store()
@@ -168,7 +175,7 @@ class PollerTests(unittest.TestCase):
 
             db_fix = os.path.join(tmp, "fix.sqlite")
             with contextlib.redirect_stdout(io.StringIO()):
-                code = poller.main(["--fixture", FIXTURE, "--db", db_fix, "--max-checks", "3", "--interval", "0"])
+                code = poller.main(["--fixture", FIXTURE, "--db", db_fix, "--max-checks", "3", "--interval", "60"])
             self.assertEqual(code, 0)
             check = Store(db_fix)
             rows = check.all_packets()
@@ -391,7 +398,7 @@ class EmptyListingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = os.path.join(tmp, "h.sqlite")
             with contextlib.redirect_stdout(io.StringIO()) as out:
-                poller.main(["--fixture", FIXTURE, "--db", db, "--max-checks", "2", "--interval", "0"])
+                poller.main(["--fixture", FIXTURE, "--db", db, "--max-checks", "2", "--interval", "60"])
         self.assertIn("suspect_listings=0 health=OK", out.getvalue())
 
 

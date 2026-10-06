@@ -83,7 +83,7 @@ class LocalFolderReader(DriveReader):
         if len(data) > MAX_BYTES:
             raise ReaderError("file too large to be a packet: " + name)
         try:
-            return data.decode("utf-8")
+            return data.decode("utf-8-sig")  # a leading byte-order mark is dropped
         except UnicodeDecodeError:
             return ""  # partly synced or not text: treated as incomplete and re-checked next cycle
 

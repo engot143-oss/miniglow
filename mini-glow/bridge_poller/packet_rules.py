@@ -4,6 +4,12 @@ import re
 NAME_RE = re.compile(r"^(R2G-\d{3})_")
 REQUIRED_HEADERS = ("PACKET_ID:", "FROM:", "TO:", "REPLY_TO:", "STATUS:")
 END_MARKER = "END_OF_PACKET"
+BOM = "\ufeff"
+
+
+def _clean(text):
+    """Drop a leading byte-order mark, so a packet saved by a BOM-writing editor still counts."""
+    return (text or "").lstrip(BOM)
 
 
 def packet_id_from_name(name):
@@ -14,7 +20,7 @@ def packet_id_from_name(name):
 
 def header_packet_id(text):
     """Value of the first PACKET_ID: line, or None."""
-    for line in (text or "").splitlines():
+    for line in _clean(text).splitlines():
         if line.startswith("PACKET_ID:"):
             return line[len("PACKET_ID:"):].strip()
     return None
@@ -22,6 +28,7 @@ def header_packet_id(text):
 
 def is_complete(text):
     """True only if headers, a non-empty body, and the END_OF_PACKET line are all present."""
+    text = _clean(text)
     if not text or not text.strip():
         return False
     lines = [line.rstrip() for line in text.splitlines() if line.strip()]
