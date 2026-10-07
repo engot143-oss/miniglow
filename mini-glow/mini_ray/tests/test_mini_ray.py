@@ -708,11 +708,26 @@ class HardeningTests(unittest.TestCase):
         def result(label, final):
             return {"label": label, "exit": 0, "stdout": "", "stderr": "Ran 9 tests in 1s\n\n%s\n" % final}
         cases = ((["OK (skipped=1)", "OK"], "PASS"), (["OK (skipped=2)", "OK"], "FAIL"),
-                 (["OK", "OK (skipped=1)"], "FAIL"))
+                 (["OK", "OK (skipped=2)"], "PASS"), (["OK", "OK (skipped=3)"], "FAIL"))
         for (a, b), expected in cases:
             ev = Evidence(self.f.ctx, "run_tests", {})
             got = RunTests(self.f.ctx, {}).verdict(ev, [result("bridge_poller tests", a), result("mini_ray tests", b)])
             self.assertEqual(got, expected, (a, b))
+
+    # ---- M8 (Windows): child output with CRLF line ends must still pass the verdict checks
+    def test_crlf_child_output_is_normalised_for_verdicts(self):
+        summary = "run=1 end_reason=WINDOW_DONE checks_done=10 new_count=1 suspect_listings=0 health=OK"
+        code = "import sys; sys.stdout.buffer.write(%r)" % (summary + "\r\n").encode("ascii")
+        result = Command("crlf", [sys.executable, "-c", code], self.f.repo, 30).run(self.f.ctx)
+        self.assertNotIn("\r", result["stdout"])
+        facts = {"last_run": (1, "s", "e", 10, 1, "WINDOW_DONE", 0, "OK"), "NEEDS_ERIC": 0}
+        ev = Evidence(self.f.ctx, "t4", {})
+        self.assertEqual(PollerBoundedRun(self.f.ctx, {}).verdict(ev, [result, {"facts": facts}]), "PASS")
+        tests_out = "import sys; sys.stderr.buffer.write(b'Ran 9 tests in 1s\\r\\n\\r\\nOK\\r\\n')"
+        r1 = Command("bridge_poller tests", [sys.executable, "-c", tests_out], self.f.repo, 30).run(self.f.ctx)
+        r2 = Command("mini_ray tests", [sys.executable, "-c", tests_out], self.f.repo, 30).run(self.f.ctx)
+        ev = Evidence(self.f.ctx, "run_tests", {})
+        self.assertEqual(RunTests(self.f.ctx, {}).verdict(ev, [r1, r2]), "PASS")
 
     def test_child_environment_hardening(self):
         env = reduced_env(self.f.ctx)

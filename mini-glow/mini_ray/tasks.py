@@ -201,8 +201,9 @@ class RepoStatus(Task):
 class RunTests(Task):
     """T2: both strict test suites."""
     name = "run_tests"
-    # Known platform skips (bridge_poller has one test that only runs on the other OS). More is a FAIL.
-    MAX_SKIPS = {"bridge_poller tests": 1, "mini_ray tests": 0}
+    # Known platform skips: bridge_poller has 1 test for the other OS; mini_ray has 2 POSIX-only tests
+    # that Windows skips. More is a FAIL.
+    MAX_SKIPS = {"bridge_poller tests": 1, "mini_ray tests": 2}
     notes = ("The test suites create and delete their own temporary folders (and small Git repositories) "
              "under TEMP. That is the one accepted write outside MiniGlow; nothing in the repository or "
              "the Bridge is written.",)

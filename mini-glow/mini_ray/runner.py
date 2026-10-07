@@ -32,7 +32,8 @@ def reduced_env(ctx=None, environ=None):
 
 
 def _cap(data):
-    text = (data or b"").decode("utf-8", errors="replace")
+    # Windows programs end lines with CRLF; normalise so every check sees plain "\n" line ends.
+    text = (data or b"").decode("utf-8", errors="replace").replace("\r\n", "\n")
     if len(text) > OUTPUT_CAP:
         return text[:OUTPUT_CAP], True
     return text, False
