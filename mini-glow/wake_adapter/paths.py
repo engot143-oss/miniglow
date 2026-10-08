@@ -1,4 +1,4 @@
-"""Fixed places the adapter may read, and the one file it may write. Standard library only."""
+"""Fixed places the adapter may read and write. Standard library only."""
 import os
 import re
 
@@ -7,6 +7,29 @@ DB_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}\.sqlite\Z")
 CHECKPOINT_NAME = "wake_adapter_checkpoint.json"
 OUTBOX_NAME = "outbox"
 AUDIT_NAME = "wake_transport_audit.jsonl"
+LINK_STATE_NAME = "bridge_link_state.json"
+LINK_INBOX_NAME = "bridge_inbox"
+# The only two Bridge folders the bridge link may touch. Ray-to-Glow (watched by bridge_poller) and Glow-to-Ray
+# (Ray's inbox) are never written by it.
+LINK_OUT = "Claude-to-Glow"
+LINK_IN = "Glow-to-Claude"
+
+
+def link_dirs(bridge_root):
+    """(outgoing, incoming) Bridge folders of the link. They must sit directly in the Bridge root."""
+    out, inc = os.path.join(bridge_root, LINK_OUT), os.path.join(bridge_root, LINK_IN)
+    for d in (out, inc):
+        if os.path.dirname(os.path.realpath(d)) != os.path.realpath(bridge_root):
+            raise Refused("bridge link folder is not directly in the Bridge root: " + d)
+    return out, inc
+
+
+def link_state_path(base):
+    return os.path.join(base, LINK_STATE_NAME)
+
+
+def link_inbox_dir(base):
+    return os.path.join(base, LINK_INBOX_NAME)
 
 
 class Refused(Exception):

@@ -12,7 +12,8 @@ import stat
 from .paths import Refused
 
 GENESIS = "0" * 64
-ACTIONS = frozenset({"DELIVERED", "STUCK", "ACKED", "REJECTED", "ALREADY_CONFIRMED"})
+ACTIONS = frozenset({"DELIVERED", "STUCK", "ACKED", "REJECTED", "ALREADY_CONFIRMED",
+                     "LINK_SENT", "LINK_RECEIVED", "LINK_REJECTED", "LINK_DUPLICATE"})
 MAX_BYTES = 16 * 1024 * 1024
 
 

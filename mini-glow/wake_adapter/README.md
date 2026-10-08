@@ -46,6 +46,22 @@ Production activation (creating the checkpoint, choosing its high water and seed
   `deliver` again) or a confirmed event without its ACKED entry (repair: acknowledge it again, which records
   `ALREADY_CONFIRMED` without a second commit). A stuck `STUCK_DELIVERY` escalation never escalates again.
 
+## Bridge link v0.3 (automatic Claude ↔ Glow packets)
+
+- Claude writes packets to `Glow-Ray-Bridge\Claude-to-Glow\BL-Cnnnn_*.txt` and reads replies from
+  `Glow-Ray-Bridge\Glow-to-Claude\BL-Gnnnn_*.txt`. It never writes Ray-to-Glow or Glow-to-Ray. No purchases,
+  no subscriptions, no email: the Bridge is a Google Drive folder Eric already owns.
+- Each packet carries `ACK_REF` and a one-time `ACK_CODE`. A reply counts only if it is complete, answers a
+  packet Claude sent, and holds exactly one matching `ACK <ref> <code>` line. Every reply file is processed once;
+  its text is saved to `MiniGlow\bridge_inbox\`. Reply text is evidence, never instructions.
+- `PING` packets are harmless tests. `WAKE_EVENT` packets carry pending GLOW deliveries. **Nothing acknowledges
+  an event automatically:** a valid Glow reply to a WAKE_EVENT waits as `AWAITING_ERIC` until Eric runs
+  `bridge-confirm` and types YES.
+- `bridge-cycle` (safe to schedule) reads replies, delivers only *new* events (it never uses up retries) and sends
+  packets for pending GLOW deliveries. STOP and a broken audit chain stop it before any write.
+- `glow_standin` is a **local test stand-in, not the real Glow**: it answers PINGs using the free local model
+  (Ollama on 127.0.0.1), signs replies `GLOW-STANDIN`, and can never answer for a WakeEvent.
+
 ## Commands
 
 ```
@@ -56,6 +72,11 @@ py -3.14 -B -m wake_adapter inbox [--route ERIC|GLOW]
 py -3.14 -B -m wake_adapter ack EVENT_ID CODE                                   (Eric types YES)
 py -3.14 -B -m wake_adapter ack-glow --text "ACK EVENT_ID CODE"                 (Eric types YES)
 py -3.14 -B -m wake_adapter audit-verify
+py -3.14 -B -m wake_adapter bridge-ping [--note TEXT]
+py -3.14 -B -m wake_adapter bridge-cycle [--db NAME.sqlite ... | --all-dbs]
+py -3.14 -B -m wake_adapter bridge-status
+py -3.14 -B -m wake_adapter bridge-confirm BL-Cnnnn                            (Eric types YES)
+py -3.14 -B -m glow_standin [--no-model]                                         (test stand-in only)
 ```
 
 Tests (run from `mini-glow`, also part of Mini Ray's `run_tests` task):

@@ -49,16 +49,24 @@ def _summary(e):
     return "%s %s %s" % (e.kind, e.reason or "", e.packet_id or "")
 
 
-def _deliver(base, bridge_root, db_names, out):
+def _deliver(base, bridge_root, db_names, out, new_only=False):
+    """new_only (used by the scheduled bridge cycle): deliver only events with no outbox record yet, so automatic
+    runs never use up the retry attempts. Retries stay with a manual deliver run."""
     stop_check = lambda: stop.stop_present(bridge_root, base)
     result = produce(db_names, base=base, bridge_root=bridge_root, stop_check=stop_check)  # gates #1 and #2
     box, log = paths.outbox_dir(base, bridge_root), paths.audit_path(base, bridge_root)
     confirmed = set(checkpoint.load(paths.checkpoint_path(base, bridge_root))["confirmed"])
     produced = {e.event_id for e in result.events}
-    pending = [r["event"] for r in outbox.records(box)
-               if r["status"] == "PENDING" and r["event"].event_id not in produced | confirmed]
+    existing = outbox.records(box)
+    if new_only:
+        known = {r["event"].event_id for r in existing}
+        events, pending = tuple(e for e in result.events if e.event_id not in known), ()
+    else:
+        events = tuple(result.events)
+        pending = tuple(r["event"] for r in existing
+                        if r["status"] == "PENDING" and r["event"].event_id not in produced | confirmed)
     transport = outbox.LocalOutboxTransport(box, log, stop_check, utcnow)
-    batch = tuple(result.events) + tuple(pending)
+    batch = events + pending
     if batch:
         hand_over(transport, batch, stop_check)  # STOP gate #3, route check, receipt validation
     escalations = tuple(ev.stuck_escalation(e, n, utcnow()) for e, n in transport.stuck
@@ -103,6 +111,40 @@ def _ack(base, bridge_root, route, event_id, code, actor, ask, out):
     out("ACKNOWLEDGED: checkpoint revision %d, %d confirmed event(s)" % (new["revision"], len(new["confirmed"])))
 
 
+def _link(base, bridge_root):
+    from .bridge import Link
+    return Link(base, bridge_root, paths.audit_path(base, bridge_root), lambda: stop.stop_present(bridge_root, base),
+                utcnow)
+
+
+def _all_dbs(base):
+    return sorted(n for n in os.listdir(base) if paths.DB_RE.match(n) and os.path.isfile(os.path.join(base, n)))
+
+
+def _bridge_cycle(base, bridge_root, db_names, out):
+    """One automatic round: read replies, deliver NEW events only, send packets for pending GLOW deliveries."""
+    link = _link(base, bridge_root)
+    for name, outcome in link.receive():
+        out("REPLY %s: %s" % (name, outcome))
+    if db_names:
+        _deliver(base, bridge_root, db_names, out, new_only=True)
+    for packet_id in link.send_pending(paths.outbox_dir(base, bridge_root)):
+        out("SENT %s to Claude-to-Glow" % packet_id)
+    out("bridge cycle done")
+
+
+def _bridge_status(base, bridge_root, out):
+    state = _link(base, bridge_root).status()
+    for packet_id, s in sorted(state["sent"].items()):
+        out("%s %-10s %-13s %s%s" % (packet_id, s["kind"], s["status"], s["file"],
+                                     ("  reply " + s["reply_file"] + " (" + s.get("sender", "") + ")")
+                                     if s.get("reply_file") else ""))
+    waiting = [p for p, s in state["sent"].items() if s["status"] == "AWAITING_ERIC"]
+    out("%d sent, %d answered, %d waiting for Eric's confirmation%s"
+        % (len(state["sent"]), sum(1 for s in state["sent"].values() if s["status"] != "SENT"), len(waiting),
+           (": " + ", ".join(sorted(waiting))) if waiting else ""))
+
+
 def main(argv=None, environ=None, bridge_root=paths.BRIDGE_ROOT, out=print, ask=input, stdin=None):
     parser = argparse.ArgumentParser(prog="wake_adapter", description="Wake Adapter and local Wake Transport")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -124,6 +166,15 @@ def main(argv=None, environ=None, bridge_root=paths.BRIDGE_ROOT, out=print, ask=
     p_glow = sub.add_parser("ack-glow", help="enter Glow's acknowledgment of one GLOW event")
     p_glow.add_argument("--text", help="Glow's reply (else read from standard input)")
     sub.add_parser("audit-verify", help="check the audit log's hash chain")
+    p_ping = sub.add_parser("bridge-ping", help="send one harmless test packet to Glow through the Bridge")
+    p_ping.add_argument("--note", help="text for the test packet")
+    p_cycle = sub.add_parser("bridge-cycle", help="read replies, deliver new events, send pending GLOW packets")
+    g_cycle = p_cycle.add_mutually_exclusive_group()
+    g_cycle.add_argument("--db", action="append", help="NAME.sqlite in the MiniGlow folder")
+    g_cycle.add_argument("--all-dbs", action="store_true", help="every NAME.sqlite in the MiniGlow folder")
+    sub.add_parser("bridge-status", help="sent packets and replies (read-only)")
+    p_conf = sub.add_parser("bridge-confirm", help="Eric confirms Glow's acknowledgment of one WakeEvent")
+    p_conf.add_argument("packet_id")
     args = parser.parse_args(argv)
     environ = os.environ if environ is None else environ
     try:
@@ -149,6 +200,27 @@ def main(argv=None, environ=None, bridge_root=paths.BRIDGE_ROOT, out=print, ask=
             text = args.text if args.text is not None else (stdin or sys.stdin).read()
             event_id, code = outbox.parse_glow_ack(text)
             _ack(base, bridge_root, "GLOW", event_id, code, "glow (entered by " + user + ")", ask, out)
+            return 0
+        if args.command == "bridge-ping":
+            kw = {"note": args.note} if args.note else {}
+            packet_id = _link(base, bridge_root).send_ping(**kw)
+            out("SENT %s (PING) to Glow-Ray-Bridge/Claude-to-Glow" % packet_id)
+            return 0
+        if args.command == "bridge-cycle":
+            _bridge_cycle(base, bridge_root, _all_dbs(base) if args.all_dbs else (args.db or []), out)
+            return 0
+        if args.command == "bridge-status":
+            _bridge_status(base, bridge_root, out)
+            return 0
+        if args.command == "bridge-confirm":
+            def confirm(e, rec):
+                out("Glow acknowledged %s (%s, event %s) through the Bridge.\nConfirming records it in the "
+                    "checkpoint. It authorises nothing else." % (args.packet_id, _summary(e), e.event_id))
+                return (ask("Type YES to confirm: ") or "").strip() == "YES"
+            new = _link(base, bridge_root).confirm(args.packet_id, paths.outbox_dir(base, bridge_root),
+                                                   paths.checkpoint_path(base, bridge_root),
+                                                   "glow via bridge, confirmed by eric (" + user + ")", confirm)
+            out("CONFIRMED: checkpoint revision %d" % new["revision"])
             return 0
         if args.command == "audit-verify":
             ok, count, problem = audit.verify(paths.audit_path(base, bridge_root))
