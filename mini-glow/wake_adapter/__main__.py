@@ -145,7 +145,9 @@ def _bridge_status(base, bridge_root, out):
            (": " + ", ".join(sorted(waiting))) if waiting else ""))
 
 
-def main(argv=None, environ=None, bridge_root=paths.BRIDGE_ROOT, out=print, ask=input, stdin=None):
+def main(argv=None, environ=None, bridge_root=paths.BRIDGE_ROOT, out=print, ask=input, stdin=None, sleep=None):
+    import time
+    sleep = sleep or time.sleep
     parser = argparse.ArgumentParser(prog="wake_adapter", description="Wake Adapter and local Wake Transport")
     sub = parser.add_subparsers(dest="command", required=True)
     p_init = sub.add_parser("init", help="create the checkpoint (needs Eric's approval in production)")
@@ -175,6 +177,8 @@ def main(argv=None, environ=None, bridge_root=paths.BRIDGE_ROOT, out=print, ask=
     sub.add_parser("bridge-status", help="sent packets and replies (read-only)")
     p_conf = sub.add_parser("bridge-confirm", help="Eric confirms Glow's acknowledgment of one WakeEvent")
     p_conf.add_argument("packet_id")
+    p_ray = sub.add_parser("ray-loop", help="send one message to Ray, then check for the reply every minute, 5 times")
+    p_ray.add_argument("--message", required=True)
     args = parser.parse_args(argv)
     environ = os.environ if environ is None else environ
     try:
@@ -209,6 +213,23 @@ def main(argv=None, environ=None, bridge_root=paths.BRIDGE_ROOT, out=print, ask=
         if args.command == "bridge-cycle":
             _bridge_cycle(base, bridge_root, _all_dbs(base) if args.all_dbs else (args.db or []), out)
             return 0
+        if args.command == "ray-loop":
+            from . import ray_loop
+            stop_check = lambda: stop.stop_present(bridge_root, base)
+            packet_id, name, before = ray_loop.send(bridge_root, base, args.message,
+                                                    paths.audit_path(base, bridge_root), stop_check, utcnow)
+            out("SENT %s to Glow-Ray-Bridge/Glow-to-Ray/%s at %s" % (packet_id, name, utcnow()))
+            outcome, reply, n = ray_loop.watch(bridge_root, packet_id, before, stop_check, out, sleep=sleep)
+            if outcome == "MATCH":
+                out("REPLY: Ray answered %s in %s (check %d)" % (packet_id, reply, n))
+            elif outcome == "UNVERIFIED":
+                out("POSSIBLE REPLY: new Ray file %s (check %d); it cannot be read here, so it is not verified"
+                    % (reply, n))
+            elif outcome == "STOPPED":
+                out("STOPPED during the wait")
+            else:
+                out("NO REPLY from Ray after %d checks (about %d minutes)" % (n, n * ray_loop.CHECK_SECONDS // 60))
+            return 0 if outcome == "MATCH" else 3
         if args.command == "bridge-status":
             _bridge_status(base, bridge_root, out)
             return 0
