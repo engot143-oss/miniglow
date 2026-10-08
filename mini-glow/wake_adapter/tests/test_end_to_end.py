@@ -11,7 +11,7 @@ from wake_adapter.__main__ import main
 from .support import NOW, RecordingTransport, TempTree, pfile, tree
 
 PACKAGE = os.path.dirname(os.path.abspath(wake_adapter.__file__))
-ALLOWED = {"argparse", "dataclasses", "datetime", "hashlib", "json", "os", "pathlib", "re", "sqlite3", "stat", "sys",
+ALLOWED = {"argparse", "dataclasses", "datetime", "hashlib", "json", "os", "pathlib", "re", "secrets", "sqlite3", "stat", "sys",
            "types", "typing"}
 FORBIDDEN = {"socket", "urllib", "http", "ssl", "subprocess", "ctypes", "bridge_poller", "mini_ray", "requests",
              "asyncio", "smtplib", "ftplib", "multiprocessing", "shutil", "tempfile"}

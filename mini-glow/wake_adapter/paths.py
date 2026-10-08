@@ -5,6 +5,8 @@ import re
 BRIDGE_ROOT = r"H:\My Drive\Glow-Ray-Bridge"
 DB_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}\.sqlite\Z")
 CHECKPOINT_NAME = "wake_adapter_checkpoint.json"
+OUTBOX_NAME = "outbox"
+AUDIT_NAME = "wake_transport_audit.jsonl"
 
 
 class Refused(Exception):
@@ -53,7 +55,21 @@ def db_path(base, name, bridge_root):
 
 
 def checkpoint_path(base, bridge_root):
-    """The adapter's only persistent write: one JSON file directly in the MiniGlow folder."""
+    """The adapter's checkpoint: one JSON file directly in the MiniGlow folder."""
     if not os.path.isdir(base):
         raise Refused("MiniGlow folder not found: " + base)
     return _outside_bridge(os.path.join(base, CHECKPOINT_NAME), bridge_root)
+
+
+def outbox_dir(base, bridge_root):
+    """The v0.2 transport's local outbox: MiniGlow\\outbox\\<route>\\<event_id>.json. Never in the Bridge."""
+    if not os.path.isdir(base):
+        raise Refused("MiniGlow folder not found: " + base)
+    return _outside_bridge(os.path.join(base, OUTBOX_NAME), bridge_root)
+
+
+def audit_path(base, bridge_root):
+    """The transport's append-only, hash-chained audit log."""
+    if not os.path.isdir(base):
+        raise Refused("MiniGlow folder not found: " + base)
+    return _outside_bridge(os.path.join(base, AUDIT_NAME), bridge_root)
