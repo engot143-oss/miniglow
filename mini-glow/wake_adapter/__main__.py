@@ -18,7 +18,8 @@
       Eric enters Glow's reply (one line "ACK <event_id> <code>"; from --text or standard input) for one GLOW
       event; asks for typed YES.
   py -3.14 -B -m wake_adapter audit-verify
-      Check the audit log's hash chain.
+      Check the audit log's hash chain, then reconcile it with the checkpoint and the outbox (finds what an
+      interrupted delivery or acknowledgment left behind, and says how to repair it).
 Exit codes: 0 done, 2 refused or STOP.
 """
 import argparse
@@ -152,7 +153,14 @@ def main(argv=None, environ=None, bridge_root=paths.BRIDGE_ROOT, out=print, ask=
         if args.command == "audit-verify":
             ok, count, problem = audit.verify(paths.audit_path(base, bridge_root))
             out("AUDIT %s: %s" % ("OK" if ok else "BROKEN", "%d entries" % count if ok else problem))
-            return 0 if ok else 2
+            if not ok:
+                return 2
+            problems = outbox.reconcile(audit.read(paths.audit_path(base, bridge_root)),
+                                        checkpoint.load(paths.checkpoint_path(base, bridge_root)),
+                                        outbox.records(paths.outbox_dir(base, bridge_root)))
+            out("RECONCILIATION %s" % ("OK: audit log, checkpoint and outbox agree" if not problems else
+                                       "INCOMPLETE:\n   " + "\n   ".join(problems)))
+            return 0 if not problems else 2
         if args.seed_db and not args.assume_high_water:
             raise paths.Refused("--seed-db in plan needs --assume-high-water (the checkpoint file has its own seed)")
         assumed = None

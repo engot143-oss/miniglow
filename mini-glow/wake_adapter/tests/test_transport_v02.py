@@ -297,7 +297,8 @@ class AuditChainTests(TransportCase):
         self.assertEqual(entries[0]["prev"], audit.GENESIS)
         self.assertEqual(entries[1]["prev"], entries[0]["hash"])
         code, text = self.cli("audit-verify")
-        self.assertEqual((code, text), (0, "AUDIT OK: 3 entries"))
+        self.assertEqual((code, text), (0, "AUDIT OK: 3 entries\n"
+                                           "RECONCILIATION OK: audit log, checkpoint and outbox agree"))
 
     def rewrite(self, transform):
         with open(self.log, encoding="utf-8") as handle:
@@ -348,3 +349,141 @@ class InboxTests(TransportCase):
         self.assertIn("OFFLINE_GAP R2G-059..R2G-075 count 17", text)
         self.assertEqual(tree(self.tmp), before)
         self.assertIn("0 delivery(ies)", self.cli("inbox", "--route", "GLOW")[1])
+
+
+class Interrupted(Exception):
+    """Simulates the process dying at a chosen point."""
+
+
+class InterruptionTests(TransportCase):
+    """F1/F3: an interruption never confirms anything wrongly, audit-verify finds the trace, and it can be repaired."""
+
+    def verify(self):
+        return self.cli("audit-verify")
+
+    def test_delivery_interrupted_before_its_audit_entry(self):
+        from unittest import mock
+        db = self.gap_db()
+        real = audit.append
+
+        def die_on_delivered(path, action, time, **fields):
+            if action == "DELIVERED":
+                raise Interrupted()
+            return real(path, action, time, **fields)
+        cp_before = fingerprint(self.cp_path)
+        with mock.patch("wake_adapter.audit.append", die_on_delivered):
+            with self.assertRaises(Interrupted):
+                self.cli("deliver", "--db", db)
+        (rec,) = self.pending()
+        self.assertEqual((rec["status"], rec["attempt"]), ("PENDING", 1))
+        self.assertEqual(fingerprint(self.cp_path), cp_before)  # nothing confirmed
+        code, text = self.verify()
+        self.assertEqual(code, 2)
+        self.assertIn("without its DELIVERED audit entry", text)
+        self.cli("deliver", "--db", db)  # repair: redelivery is audited
+        (rec,) = self.pending()
+        self.assertEqual(rec["attempt"], 2)
+        self.assertEqual(self.verify()[0], 0)
+        self.assertEqual(self.cli("ack", rec["event"].event_id, rec["code"])[0], 0)
+        self.assertEqual(self.verify()[0], 0)
+
+    def test_acknowledgment_interrupted_after_the_commit(self):
+        from unittest import mock
+        db = self.gap_db()
+        self.cli("deliver", "--db", db)
+        (rec,) = self.pending()
+        real = outbox._write
+
+        def die_when_marking_acked(path, r):
+            if r["status"] == "ACKED":
+                raise Interrupted()
+            return real(path, r)
+        with mock.patch("wake_adapter.outbox._write", die_when_marking_acked):
+            with self.assertRaises(Interrupted):
+                self.cli("ack", rec["event"].event_id, rec["code"])
+        self.assertEqual(self.cp()["revision"], 1)  # the commit happened once
+        self.assertEqual(self.pending()[0]["status"], "PENDING")
+        self.assertIn("already confirmed in the checkpoint", self.cli("inbox")[1])
+        self.cli("deliver", "--db", db)  # a confirmed event is never delivered again
+        self.assertEqual(self.pending()[0]["attempt"], 1)
+        code, text = self.verify()
+        self.assertEqual(code, 2)
+        self.assertIn("without an ACKED audit entry", text)
+        self.assertEqual(self.cli("ack", rec["event"].event_id, rec["code"])[0], 0)  # repair
+        self.assertEqual(self.cp()["revision"], 1)  # no second commit
+        self.assertEqual(audit.read(self.log)[-1]["action"], "ALREADY_CONFIRMED")
+        self.assertEqual(self.verify()[0], 0)
+
+    def test_acknowledgment_interrupted_before_its_audit_entry(self):
+        from unittest import mock
+        db = self.gap_db()
+        self.cli("deliver", "--db", db)
+        (rec,) = self.pending()
+        real = audit.append
+
+        def die_on_acked(path, action, time, **fields):
+            if action == "ACKED":
+                raise Interrupted()
+            return real(path, action, time, **fields)
+        with mock.patch("wake_adapter.audit.append", die_on_acked):
+            with self.assertRaises(Interrupted):
+                self.cli("ack", rec["event"].event_id, rec["code"])
+        self.assertEqual(outbox.records(self.box)[0]["status"], "ACKED")
+        self.assertEqual(self.verify()[0], 2)
+        self.assertEqual(self.cli("ack", rec["event"].event_id, rec["code"])[0], 0)  # repair allowed once
+        self.assertEqual((self.cp()["revision"], self.verify()[0]), (1, 0))
+        self.assertEqual(self.cli("ack", rec["event"].event_id, rec["code"])[0], 2)  # then refused again
+
+    def test_acknowledgment_interrupted_during_the_checkpoint_write(self):
+        from unittest import mock
+        db = self.gap_db()
+        self.cli("deliver", "--db", db)
+        (rec,) = self.pending()
+        cp_before = fingerprint(self.cp_path)
+        with mock.patch("wake_adapter.checkpoint.os.replace", side_effect=Interrupted()):
+            with self.assertRaises(Interrupted):
+                self.cli("ack", rec["event"].event_id, rec["code"])
+        self.assertEqual(fingerprint(self.cp_path), cp_before)
+        self.assertFalse(os.path.exists(self.cp_path + ".tmp"))  # our temporary file was cleaned up
+        self.assertEqual(self.pending()[0]["status"], "PENDING")
+        self.assertEqual(self.verify()[0], 0)  # consistent: nothing was confirmed
+        self.assertEqual(self.cli("ack", rec["event"].event_id, rec["code"])[0], 0)
+        self.assertEqual(self.cp()["revision"], 1)
+
+    def test_leftover_temporary_outbox_record_is_refused(self):
+        db = self.gap_db()
+        self.cli("deliver", "--db", db)
+        (rec,) = self.pending()
+        path = outbox.record_path(self.box, "ERIC", rec["event"].event_id)
+        with open(path + ".tmp", "w") as handle:
+            handle.write("left over")
+        before = fingerprint(path)
+        code, text = self.cli("deliver", "--db", db)
+        self.assertEqual(code, 2)
+        self.assertIn("leftover temporary outbox record", text)
+        self.assertEqual(fingerprint(path), before)
+        with open(path + ".tmp") as handle:
+            self.assertEqual(handle.read(), "left over")  # never overwritten or removed
+
+
+class NoCascadeTests(TransportCase):
+    """F2: a STUCK_DELIVERY escalation that itself gets stuck never produces another escalation."""
+
+    def test_stuck_escalation_does_not_cascade(self):
+        db = self.new_db()
+        for _ in range(4):
+            self.cli("deliver", "--db", db)  # GLOW event: attempts 1-3, then STUCK + escalation attempt 1
+        for _ in range(2):
+            self.cli("deliver", "--db", db)  # escalation attempts 2-3
+        code, text = self.cli("deliver", "--db", db)  # escalation exceeds its attempts
+        self.assertEqual(code, 0, text)
+        (esc,) = outbox.records(self.box, "ERIC")
+        self.assertEqual((esc["status"], esc["attempt"], esc["event"].reason), ("STUCK", 3, "STUCK_DELIVERY"))
+        for _ in range(3):
+            self.cli("deliver", "--db", db)
+        self.assertEqual(len(outbox.records(self.box, "ERIC")), 1)  # no escalation of the escalation
+        self.assertEqual([r["status"] for r in outbox.records(self.box)], ["STUCK", "STUCK"])
+        self.assertEqual([e["action"] for e in audit.read(self.log)].count("STUCK"), 2)
+        self.assertIn("STUCK", self.cli("inbox", "--route", "ERIC")[1])  # still visible to Eric
+        self.assertEqual(self.cli("ack", esc["event"].event_id, esc["code"])[0], 0)  # and still acknowledgeable
+        self.assertEqual(self.cli("audit-verify")[0], 0)

@@ -151,19 +151,52 @@ def parse_glow_ack(text):
     return found[0]
 
 
+def _acked_ids(entries):
+    return {x["event_id"] for x in entries if x["action"] in ("ACKED", "ALREADY_CONFIRMED")}
+
+
+def reconcile(entries, cp, recs):
+    """Cross-check the audit log, the checkpoint and the outbox. Returns problems; empty means consistent.
+
+    Finds the traces an interruption can leave: a delivery written without its DELIVERED entry, and an event
+    confirmed by this transport without its ACKED entry. Repairs: run deliver again (redelivery is audited), or
+    acknowledge the event again (records ALREADY_CONFIRMED without a second commit).
+    """
+    problems = []
+    acked = _acked_ids(entries)
+    for eid, entry in sorted(cp["confirmed"].items()):
+        if entry["transport"] == NAME and eid not in acked:
+            problems.append("confirmed in the checkpoint without an ACKED audit entry (interrupted "
+                            "acknowledgment; acknowledge it again): " + eid)
+    last_code = {}
+    for x in entries:
+        if x["action"] == "DELIVERED":
+            last_code[x["event_id"]] = x.get("code_sha256")
+    for r in recs:
+        eid = r["event"].event_id
+        if r["status"] in ("PENDING", "STUCK") and last_code.get(eid) != audit.code_hash(r["code"]):
+            problems.append("outbox delivery without its DELIVERED audit entry (interrupted delivery; run "
+                            "deliver again): " + eid)
+        if r["status"] != "ACKED" and eid in cp["confirmed"] and eid not in acked:
+            problems.append("confirmed but its outbox record is still %s: %s" % (r["status"], eid))
+    return problems
+
+
 def acknowledge(outbox, audit_log, cp_path, route, event_id, code, actor, confirm, stop_check, now):
     """Accept one acknowledgment and advance the checkpoint for that one event. Returns the new checkpoint."""
     found = stop_check()  # STOP gate #4: before an acknowledgment is accepted
     if found:
         raise Stopped(found)
-    audit.read(audit_log)  # a broken audit chain refuses before anything is accepted
+    entries = audit.read(audit_log)  # a broken audit chain refuses before anything is accepted
     path = record_path(outbox, route, event_id)
     if not os.path.lexists(path):
         raise Refused("no %s delivery for event %s" % (route, event_id))
     rec = load_record(path)
     e = rec["event"]
-    if rec["status"] == "ACKED":
+    if rec["status"] == "ACKED" and event_id in _acked_ids(entries):
         raise Refused("event already acknowledged")
+    # An ACKED record without its audit entry (an interrupted acknowledgment) may be acknowledged again: the
+    # checkpoint already holds it, so this only adds the missing ALREADY_CONFIRMED evidence.
     if not CODE_RE.match(code or "") or not secrets.compare_digest(code, rec["code"]):
         audit.append(audit_log, "REJECTED", now(), event_id=event_id, route=route, actor=actor,
                      attempt=rec["attempt"], detail="wrong or superseded delivery code")

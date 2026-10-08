@@ -40,6 +40,11 @@ Production activation (creating the checkpoint, choosing its high water and seed
   `deliver`: no background service, no schedule.
 - **Tamper-evident.** Each outbox record is rebuilt and checked against its event_id. The audit log is
   hash-chained; a broken chain refuses all further delivery and acknowledgment. Codes are logged only as hashes.
+- **Interruption-safe.** Every file write is atomic and a leftover temporary file is refused, never overwritten.
+  An interruption never confirms anything wrongly. `audit-verify` reconciles the audit log with the checkpoint
+  and the outbox and names any trace an interruption left: a delivery without its audit entry (repair: run
+  `deliver` again) or a confirmed event without its ACKED entry (repair: acknowledge it again, which records
+  `ALREADY_CONFIRMED` without a second commit). A stuck `STUCK_DELIVERY` escalation never escalates again.
 
 ## Commands
 
