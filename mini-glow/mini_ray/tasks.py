@@ -199,11 +199,11 @@ class RepoStatus(Task):
 
 
 class RunTests(Task):
-    """T2: both strict test suites."""
+    """T2: the three strict test suites."""
     name = "run_tests"
     # Known platform skips: bridge_poller has 1 test for the other OS; mini_ray has 2 POSIX-only tests
-    # that Windows skips. More is a FAIL.
-    MAX_SKIPS = {"bridge_poller tests": 1, "mini_ray tests": 2}
+    # that Windows skips; wake_adapter has none. More is a FAIL.
+    MAX_SKIPS = {"bridge_poller tests": 1, "mini_ray tests": 2, "wake_adapter tests": 0}
     notes = ("The test suites create and delete their own temporary folders (and small Git repositories) "
              "under TEMP. That is the one accepted write outside MiniGlow; nothing in the repository or "
              "the Bridge is written.",)
@@ -212,7 +212,8 @@ class RunTests(Task):
         py = [self.ctx.python, "-X", "dev", "-W", "error::ResourceWarning", "-m", "unittest", "discover"]
         mg = self.ctx.mini_glow
         return [Command("bridge_poller tests", py + ["-s", "bridge_poller/tests", "-t", "."], mg, 300),
-                Command("mini_ray tests", py + ["-s", "mini_ray/tests", "-t", "."], mg, 300)]
+                Command("mini_ray tests", py + ["-s", "mini_ray/tests", "-t", "."], mg, 300),
+                Command("wake_adapter tests", py + ["-s", "wake_adapter/tests", "-t", "."], mg, 300)]
 
     def verdict(self, ev, results):
         ok = True

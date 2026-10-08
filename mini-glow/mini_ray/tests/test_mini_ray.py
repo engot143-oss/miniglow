@@ -703,6 +703,23 @@ class HardeningTests(unittest.TestCase):
         self.assertEqual(len([x for x in lines if x.startswith("SHA256:")]), 1)
         self.assertIn("| VERDICT: PASS", lines)
 
+    # ---- Wake Adapter v0.1: T2 also runs the wake_adapter suite, which may not skip anything
+    def test_run_tests_runs_the_three_suites(self):
+        steps = RunTests(self.f.ctx, {}).steps()
+        self.assertEqual([s.label for s in steps], ["bridge_poller tests", "mini_ray tests", "wake_adapter tests"])
+        self.assertEqual([s.argv[s.argv.index("-s") + 1] for s in steps],
+                         ["bridge_poller/tests", "mini_ray/tests", "wake_adapter/tests"])
+
+    def test_run_tests_wake_adapter_may_not_skip(self):
+        def result(label, final):
+            return {"label": label, "exit": 0, "stdout": "", "stderr": "Ran 9 tests in 1s\n\n%s\n" % final}
+        for final, expected in (("OK", "PASS"), ("OK (skipped=1)", "FAIL")):
+            ev = Evidence(self.f.ctx, "run_tests", {})
+            got = RunTests(self.f.ctx, {}).verdict(ev, [result("bridge_poller tests", "OK"),
+                                                        result("mini_ray tests", "OK"),
+                                                        result("wake_adapter tests", final)])
+            self.assertEqual(got, expected, final)
+
     # ---- review 12: skipped tests are limited
     def test_run_tests_skip_limits(self):
         def result(label, final):
